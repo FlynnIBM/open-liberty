@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2010 IBM Corporation and others.
+ * Copyright (c) 2010, 2018 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * which accompanies this distribution, and is available at
@@ -10,6 +10,9 @@
  *******************************************************************************/
 package com.ibm.ws.kernel.service.location.internal;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
@@ -19,6 +22,7 @@ import java.util.regex.Pattern;
 import com.ibm.websphere.ras.Tr;
 import com.ibm.websphere.ras.TraceComponent;
 import com.ibm.websphere.ras.annotation.Trivial;
+import com.ibm.ws.kernal.service.location.SymbolResolver;
 import com.ibm.ws.staticvalue.StaticValue;
 import com.ibm.wsspi.kernel.service.location.MalformedLocationException;
 import com.ibm.wsspi.kernel.service.location.WsLocationConstants;
@@ -118,7 +122,34 @@ public class SymbolRegistry {
     /** Map of string symbol to entry */
     private final ConcurrentHashMap<String, SymRegEntry> stringToEntry = new ConcurrentHashMap<String, SymRegEntry>();
     private final ConcurrentSkipListSet<RootRegEntry> rootPaths = new ConcurrentSkipListSet<RootRegEntry>();
-
+    
+    /** List of symbol resolver objects */
+    private List<SymbolResolver> symbolResolverList = Collections.synchronizedList(new ArrayList<SymbolResolver>());
+    
+    /**
+     * Add symbol resolver object from service tracker via VariableRegistryHelper class
+     * @param symbolResolverIN
+     */
+    protected void addSymbolResolver(SymbolResolver symbolResolverIN) {
+    		symbolResolverList.add(symbolResolverIN);
+    }
+    
+    /**
+     * Remove symbol resolver object from service tracker via VariableRegistryHelper class
+     * @param symbolResolverIN
+     */
+    protected void removeSymbolResolver(SymbolResolver symbolResolverIN) {
+    	symbolResolverList.remove(symbolResolverIN);
+    }
+    
+    /**
+     * Called to clear entire symbol resolver list when symbol resolver service
+     * tracker is closed in activator class
+     */
+    protected void clearAllResolverList() {
+    	symbolResolverList.clear();
+    }
+    
     public boolean addResourceSymbol(String symbol, InternalWsResource value) {
         SymRegEntry entry = new SymRegEntry(EntryType.RESOURCE, symbol, value);
         SymRegEntry prev = stringToEntry.putIfAbsent(symbol, entry);
@@ -338,7 +369,6 @@ public class SymbolRegistry {
         if (pathNormalize) {
             path = PathUtils.normalize(path);
         }
-
         Matcher m = SymbolRegistry.SYMBOL_DEF.matcher(path);
         if (m.find()) {
             String symbol = m.group(1);
@@ -374,9 +404,31 @@ public class SymbolRegistry {
                 if (value != null) {
                     return replaceAndResolveString(originalPath, path, includeRoots, recurse, m, value, pathNormalize);
                 } else if (symbol.startsWith("env.")) {
-                    value = System.getenv(symbol.substring(4));
+                	
+                	// Iterates through list of symbol resolvers and selects symbol resolver that handles "env" prefix
+                	SymbolResolver symbolResolver = null, tempSymbolResolver = null;
+                	synchronized(symbolResolverList){
+	                	for (int i=0; i < symbolResolverList.size(); i++) {
+	                		tempSymbolResolver = symbolResolverList.get(i);
+	                		// When correct symbol resolver found, set symbolResolver and break loop
+	                		if (tempSymbolResolver.getSupportedPrefixes().contains("env")){
+	                			symbolResolver = tempSymbolResolver;
+	                			break;
+	                		}
+	                	}
+                	}
+                	
+                	// Call to resolve symbol from symbol resolver that was found above
+                	if (symbolResolver != null) {
+                		// substring of symbol is symbol without env. prefix
+                		value = symbolResolver.resolveSymbol(symbol.substring(4));
+                	}
+                	
+                	// Resolve value if not null, otherwise print err message
                     if (value != null) {
                         return replaceAndResolveString(originalPath, path, includeRoots, recurse, m, value, pathNormalize);
+                    } else {
+                    	System.err.println("SYMBOLRESOLVER: Value being resolved is NULL. Could not resolve value");
                     }
                 }
             }
