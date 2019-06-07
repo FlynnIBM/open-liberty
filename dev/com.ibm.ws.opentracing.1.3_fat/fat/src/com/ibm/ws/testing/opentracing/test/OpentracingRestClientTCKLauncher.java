@@ -10,6 +10,8 @@
  *******************************************************************************/
 package com.ibm.ws.testing.opentracing.test;
 
+import java.util.Collections;
+
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -27,8 +29,8 @@ import componenttest.topology.utils.MvnUtils;
 @RunWith(FATRunner.class)
 public class OpentracingRestClientTCKLauncher {
 
-    private static final String FEATURE_NAME = "com.ibm.ws.opentracing.mock-0.31.mf";
-    private static final String BUNDLE_NAME = "com.ibm.ws.opentracing.mock-0.31.jar";
+    private static final String FEATURE_NAME = "com.ibm.ws.opentracing.mock-1.3.mf";
+    private static final String BUNDLE_NAME = "com.ibm.ws.opentracing.mock-1.3.jar";
 
     @Server("OpentracingRestClientTCKServer")
     public static LibertyServer server;
@@ -53,7 +55,6 @@ public class OpentracingRestClientTCKLauncher {
     @Test
     @AllowedFFDC // The tested deployment exceptions cause FFDC so we have to allow for this.
     public void launchOpentracingRestClientTck() throws Exception {
-        MvnUtils.setSuiteFileName("rest-client-tck-suite.xml", server);
-        MvnUtils.runTCKMvnCmd(server, "com.ibm.ws.opentracing.1.3_fat", this.getClass() + ":launchOpentracingRestClientTck");
+        MvnUtils.runTCKMvnCmd(server, "com.ibm.ws.opentracing.1.3_fat", this.getClass() + ":launchOpentracingRestClientTck", "rest-client-tck-suite.xml", Collections.emptyMap(), Collections.emptySet());
     }
 }

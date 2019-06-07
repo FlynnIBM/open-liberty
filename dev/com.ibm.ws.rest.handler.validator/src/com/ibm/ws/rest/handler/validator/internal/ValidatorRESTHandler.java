@@ -61,7 +61,7 @@ import com.ibm.wsspi.validator.Validator;
 @Component(name = "com.ibm.ws.rest.handler.validator",
            configurationPolicy = ConfigurationPolicy.IGNORE,
            service = { RESTHandler.class },
-           property = { "com.ibm.wsspi.rest.handler.context.root=/ibm/api", "com.ibm.wsspi.rest.handler.root=/validator" }) // TODO switch to /openapi/platform
+           property = { RESTHandler.PROPERTY_REST_HANDLER_ROOT + "=/validation", RESTHandler.PROPERTY_REST_HANDLER_CUSTOM_SECURITY + "=true" })
 public class ValidatorRESTHandler extends ConfigBasedRESTHandler {
     private static final TraceComponent tc = Tr.register(ValidatorRESTHandler.class);
 
@@ -78,6 +78,11 @@ public class ValidatorRESTHandler extends ConfigBasedRESTHandler {
     @Deactivate
     protected void deactivate(ComponentContext context) {
         this.context = null;
+    }
+
+    @Override
+    public final String getAPIRoot() {
+        return "/validation";
     }
 
     @Override
@@ -118,6 +123,7 @@ public class ValidatorRESTHandler extends ConfigBasedRESTHandler {
             try {
                 return AccessController.doPrivileged(new PrivilegedExceptionAction<ServiceReference<?>[]>() {
                     @Override
+                    @Trivial
                     public ServiceReference<?>[] run() throws InvalidSyntaxException {
                         return bCtx.getServiceReferences(clazz, filter);
                     }
@@ -138,6 +144,7 @@ public class ValidatorRESTHandler extends ConfigBasedRESTHandler {
         } else
             return AccessController.doPrivileged(new PrivilegedAction<S>() {
                 @Override
+                @Trivial
                 public S run() {
                     BundleContext bCtx = ctx.getBundleContext();
                     return bCtx == null ? null : bCtx.getService(reference);
@@ -171,7 +178,9 @@ public class ValidatorRESTHandler extends ConfigBasedRESTHandler {
         // Obtain the instance to validate
         ServiceReference<?>[] targetRefs;
         try {
-            String filter = FilterUtils.createPropertyFilter("service.pid", (String) config.get("service.pid"));
+            String filter = "(|" + FilterUtils.createPropertyFilter("service.pid", (String) config.get("service.pid")) // config without super type
+                           + FilterUtils.createPropertyFilter("ibm.extends.subtype.pid", (String) config.get("service.pid")) // config with super type
+                           + ")";
             targetRefs = getServiceReferences(context.getBundleContext(), (String) null, filter);
         } catch (InvalidSyntaxException x) {
             targetRefs = null; // same error handling as not found
@@ -201,10 +210,10 @@ public class ValidatorRESTHandler extends ConfigBasedRESTHandler {
             for (String key : request.getParameterMap().keySet()) {
                 params.put(key, resolvePotentialVariable(request.getParameter(key))); // TODO only add valid parameters (auth, authData)? And if we want any validation of values, this is the central place for it
             }
-            String user = request.getHeader("X-Validator-User");
+            String user = request.getHeader("X-Validation-User");
             if (user != null)
                 params.put("user", resolvePotentialVariable(user));
-            String pass = request.getHeader("X-Validator-Password");
+            String pass = request.getHeader("X-Validation-Password");
             if (pass != null)
                 params.put("password", resolvePotentialVariable(pass));
             String contentType = request.getContentType();
@@ -246,6 +255,7 @@ public class ValidatorRESTHandler extends ConfigBasedRESTHandler {
     }
 
     @Override
+    @Trivial
     public void populateResponse(RESTResponse response, Object responseInfo) throws IOException {
         JSONArtifact json;
         if (responseInfo instanceof JSONArtifact)
@@ -262,6 +272,10 @@ public class ValidatorRESTHandler extends ConfigBasedRESTHandler {
             throw new IllegalArgumentException(responseInfo.toString()); // should be unreachable
 
         String jsonString = json.serialize(true);
+
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled())
+            Tr.debug(this, tc, "populateResponse", jsonString);
+
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
         response.getOutputStream().write(jsonString.getBytes("UTF-8"));
@@ -285,7 +299,7 @@ public class ValidatorRESTHandler extends ConfigBasedRESTHandler {
      * Populate JSON object for a top level exception or error.
      *
      * @param errorInfo additional information to append to exceptions and causes
-     * @param error the top level exception or error.
+     * @param error     the top level exception or error.
      * @return JSON object representing the Throwable.
      */
     @SuppressWarnings("unchecked")
@@ -351,5 +365,10 @@ public class ValidatorRESTHandler extends ConfigBasedRESTHandler {
             Tr.debug(tc, "Was a variable value found for " + value + "?  " + !value.equals(resolvedVariable));
         }
         return resolvedVariable;
+    }
+
+    @Override
+    public boolean requireAdministratorRole() {
+        return true;
     }
 }

@@ -643,7 +643,11 @@ public class PolicyTaskFutureImpl<T> implements PolicyTaskFuture<T> {
     public final long getElapsedRunTime(TimeUnit unit) {
         long begin = nsQueueEnd;
         long elapsed = nsRunEnd - begin;
-        return unit.convert(elapsed >= 0 ? elapsed : begin - nsAcceptBegin > 0 ? System.nanoTime() - begin : 0, TimeUnit.NANOSECONDS);
+        if (elapsed < 0)
+            elapsed = begin - nsAcceptBegin > 0 ? System.nanoTime() - begin : 0;
+        else if (elapsed > 0 && state.get() == ABORTED)
+            elapsed = 0; // nsQueueEnd,nsRunEnd can get out of sync when abort is attempted by multiple threads at once
+        return unit.convert(elapsed, TimeUnit.NANOSECONDS);
     }
 
     @Trivial
@@ -720,6 +724,12 @@ public class PolicyTaskFutureImpl<T> implements PolicyTaskFuture<T> {
                     state.releaseShared(SUCCESSFUL);
                     if (latch != null)
                         latch.countDown(t);
+                } else if (Integer.valueOf(CANCELED).equals(result.get())) {
+                    if (trace && tc.isDebugEnabled())
+                        Tr.debug(this, tc, "canceled during/after run");
+                    // Prevent dirty read of state during onEnd before the canceling thread transitions the state to CANCELING/CANCELED
+                    while (state.get() == RUNNING)
+                        Thread.yield();
                 }
 
                 if (trace && tc.isDebugEnabled())

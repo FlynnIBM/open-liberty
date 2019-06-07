@@ -10,18 +10,26 @@
  *******************************************************************************/
 package org.test.validator.adapter;
 
+import java.io.IOError;
 import java.io.PrintWriter;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Proxy;
 import java.security.AccessController;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
+import java.sql.DatabaseMetaData;
+import java.sql.SQLException;
+import java.sql.SQLNonTransientConnectionException;
 
 import javax.resource.NotSupportedException;
 import javax.resource.ResourceException;
+import javax.resource.spi.CommException;
 import javax.resource.spi.ConnectionEventListener;
 import javax.resource.spi.ConnectionRequestInfo;
 import javax.resource.spi.LocalTransaction;
 import javax.resource.spi.ManagedConnection;
 import javax.resource.spi.ManagedConnectionMetaData;
+import javax.resource.spi.ResourceAdapterInternalException;
 import javax.resource.spi.SecurityException;
 import javax.resource.spi.security.PasswordCredential;
 import javax.security.auth.Subject;
@@ -31,25 +39,31 @@ import org.test.validator.adapter.ConnectionSpecImpl.ConnectionRequestInfoImpl;
 
 public class ManagedConnectionImpl implements ManagedConnection {
     private final ManagedConnectionFactoryImpl mcf;
+    private String mostRecentUser;
 
     ManagedConnectionImpl(ManagedConnectionFactoryImpl mcf) {
         this.mcf = mcf;
     }
 
     @Override
-    public void addConnectionEventListener(ConnectionEventListener listener) {}
+    public void addConnectionEventListener(ConnectionEventListener listener) {
+    }
 
     @Override
-    public void associateConnection(Object handle) throws ResourceException {}
+    public void associateConnection(Object handle) throws ResourceException {
+    }
 
     @Override
-    public void cleanup() throws ResourceException {}
+    public void cleanup() throws ResourceException {
+    }
 
     @Override
-    public void destroy() throws ResourceException {}
+    public void destroy() throws ResourceException {
+    }
 
     @Override
     public Object getConnection(Subject subject, ConnectionRequestInfo cri) throws ResourceException {
+        boolean isJDBC = (Boolean) ((ConnectionRequestInfoImpl) cri).getOrDefault("JDBC", Boolean.FALSE);
         String userName = mcf.getUserName();
         String password = mcf.getPassword();
         if (subject == null) {
@@ -76,7 +90,23 @@ public class ManagedConnectionImpl implements ManagedConnection {
         // Accept some user/password combinations and reject others
         if ("DefaultUserName".equals(userName) && "DefaultPassword".equals(password) ||
             userName != null && password != null && userName.charAt(userName.length() - 1) == password.charAt(0))
-            return new ConnectionImpl(userName);
+            if (isJDBC)
+                try {
+                    InvocationHandler handler = new JDBCConnectionImpl(mostRecentUser = userName);
+                    return AccessController.doPrivileged((PrivilegedExceptionAction<?>) () -> {
+                        return Proxy.newProxyInstance(java.sql.Connection.class.getClassLoader(),
+                                                      new Class<?>[] { java.sql.Connection.class, DatabaseMetaData.class },
+                                                      handler);
+                    });
+                } catch (PrivilegedActionException x) {
+                    Throwable cause = x.getCause();
+                    if (cause instanceof ResourceException)
+                        throw (ResourceException) cause;
+                    else
+                        throw new ResourceException(cause);
+                }
+            else
+                return new ConnectionImpl(mostRecentUser = userName);
         else
             throw new SecurityException("Unable to authenticate with " + userName, "ERR_AUTH");
     }
@@ -102,8 +132,32 @@ public class ManagedConnectionImpl implements ManagedConnection {
     }
 
     @Override
-    public void removeConnectionEventListener(ConnectionEventListener listener) {}
+    public void removeConnectionEventListener(ConnectionEventListener listener) {
+    }
 
     @Override
-    public void setLogWriter(PrintWriter logWriter) throws ResourceException {}
+    public void setLogWriter(PrintWriter logWriter) throws ResourceException {
+    }
+
+    /**
+     * Simulate the pattern used by CICS/IMS resource adapters to allow for a managed connection to be tested.
+     *
+     * @return true if validation is successful. False indicates validation is unsuccessful.
+     * @throws ResourceException indicates the connection is not valid.
+     * @throws SQLException      indicates the connection is not valid.
+     */
+    public boolean testConnection() throws ResourceException, SQLException {
+        // The user name parameter is a convenient way to trigger rejection of test requests in variety of ways,
+        if (mostRecentUser.startsWith("testerruser"))
+            throw new IOError(new SQLNonTransientConnectionException("Database appears to be down.", "08006", -13579));
+        else if (mostRecentUser.startsWith("testfailuser"))
+            return false;
+        else if (mostRecentUser.startsWith("testresxuser"))
+            throw (ResourceAdapterInternalException) new ResourceAdapterInternalException("Something bad has happened. See cause.")
+                            .initCause(new CommException("Lost connection to host.", "ERR_CONNECT"));
+        else if (mostRecentUser.startsWith("testrunxuser"))
+            throw new IllegalStateException("Connection was dropped.");
+        else
+            return true;
+    }
 }

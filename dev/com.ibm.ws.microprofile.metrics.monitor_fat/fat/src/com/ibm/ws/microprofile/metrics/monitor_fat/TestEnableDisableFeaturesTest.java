@@ -353,14 +353,13 @@ public class TestEnableDisableFeaturesTest {
     	Log.info(c, testName, "------- Remove JAX-WS application ------");
     	boolean rc1 = serverEDF10.removeAndStopDropinsApplications("testJaxWsApp.war");
     	Log.info(c, testName, "------- " + (rc1 ? "successfully removed" : "failed to remove") + " JAX-WS application ------");
+    	Assert.assertNotNull("CWWKT0017I NOT FOUND",serverEDF10.waitForStringInLogUsingMark(".*CWWKT0017I.*testJaxWsApp.*"));
     	serverEDF10.setMarkToEndOfLog();
     	serverEDF10.setServerConfigurationFile("server_noJaxWs.xml");
     	Assert.assertNotNull("CWWKF0008I NOT FOUND",serverEDF10.waitForStringInLogUsingMark("CWWKF0008I"));
-    	Assert.assertNotNull("Web application /metrics not loaded", serverEDF10.waitForStringInLog("CWWKT0016I: Web application available .*testJDBCApp.*"));
-        Assert.assertNotNull("Web application /metrics not loaded", serverEDF10.waitForStringInLog("CWWKT0016I: Web application available .*testSessionApp.*"));
+    	Assert.assertNotNull("testJDBCApp not loaded", serverEDF10.waitForStringInLog("CWWKT0016I: Web application available .*testJDBCApp.*"));
+        Assert.assertNotNull("testSessionApp not loaded", serverEDF10.waitForStringInLog("CWWKT0016I: Web application available .*testSessionApp.*"));
     	Log.info(c, testName, "------- jax-ws metrics should not be available ------");
-    	Thread.sleep(10000);
-    	System.out.println("***** RIGHT HERE *****");
     	checkStrings(getHttpsServlet("/metrics/vendor",serverEDF10), 
     		new String[] { "vendor:" }, 
     		new String[] { "vendor:jaxws_client", "vendor:jaxws_server"});       	
@@ -388,9 +387,11 @@ public class TestEnableDisableFeaturesTest {
     	currentServ = serverEDF12;
     	String testName = "testEDF12";
     	serverEDF12.startServer();
+    	Assert.assertNotNull("CWWKF0011I NOT FOUND",serverEDF12.waitForStringInLogUsingMark("CWWKF0011I"));
     	Log.info(c, testName, "------- Remove monitor-1.0 ------");
+    	serverEDF12.setMarkToEndOfLog();
     	serverEDF12.setServerConfigurationFile("server_noJDBCMonitor.xml");
-    	Assert.assertNotNull("CWPMI2002I NOT FOUND",serverEDF12.waitForStringInLogUsingMark("CWPMI2002I"));
+    	Assert.assertNotNull("CWWKF0008I NOT FOUND",serverEDF12.waitForStringInLogUsingMark("CWWKF0008I"));
     	Log.info(c, testName, "------- no vendor metrics should be available ------");
     	checkStrings(getHttpsServlet("/metrics",serverEDF12), 
     		new String[] {}, 
@@ -478,7 +479,7 @@ public class TestEnableDisableFeaturesTest {
     @After
     public void tearDown() throws Exception {
         if (currentServ != null && currentServ.isStarted()) {
-        	currentServ.stopServer("CWWKS4000E", "CWWKZ0014W");
+        	currentServ.stopServer("CWWKS4000E", "CWWKZ0014W", "CWNEN0049W");
         	currentServ.removeAllInstalledAppsForValidation();
         }
     }

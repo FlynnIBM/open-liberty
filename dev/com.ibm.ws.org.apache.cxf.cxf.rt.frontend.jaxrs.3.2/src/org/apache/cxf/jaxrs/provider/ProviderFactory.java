@@ -207,11 +207,13 @@ public abstract class ProviderFactory {
                      new IBMMultipartProvider(), // Liberty Change for CXF End
                      //tryCreateInstance("org.apache.cxf.jaxrs.provider.MultipartProvider"));
                      new MultipartProvider());// Liberty change - tryCreateInstance changes behavior
-        Object prop = factory.getBus().getProperty("skip.default.json.provider.registration");
+        // Liberty change begin
+        // Liberty sets JSON providers above and does not ship the CXF JSONProvider
+        /*Object prop = factory.getBus().getProperty("skip.default.json.provider.registration");
         if (!PropertyUtils.isTrue(prop)) {
             factory.setProviders(false, false, createProvider(JSON_PROVIDER_NAME, factory.getBus()));
-        }
-
+        }*/
+        // Liberty change end
     }
 
     protected static Object tryCreateInstance(final String className) {
@@ -1162,7 +1164,7 @@ private final Map<MessageBodyReader<?>, List<MediaType>> readerMediaTypesMap = n
         //Liberty code change end
     }
 
-    List<ProviderInfo<ContextResolver<?>>> getContextResolvers() {
+    public List<ProviderInfo<ContextResolver<?>>> getContextResolvers() {
         //Liberty code change start
         return Collections.unmodifiableList(contextResolvers.get());
         //Liberty code change end

@@ -10,16 +10,22 @@
  *******************************************************************************/
 package com.ibm.ws.jdbc.fat.postgresql;
 
+import org.junit.BeforeClass;
 import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
 import org.junit.runners.Suite.SuiteClasses;
 
-import componenttest.custom.junit.runner.AlwaysPassesTest;
+import componenttest.topology.utils.ExternalTestServiceDockerClientStrategy;
 
 @RunWith(Suite.class)
 @SuiteClasses({
-                AlwaysPassesTest.class, // needed for OSes that do not have docker installed
-                PostgreSQLTest.class,
+                PostgreSQLTest.class
 })
 public class FATSuite {
+
+    @BeforeClass
+    public static void setupBukcet() throws Exception {
+        ExternalTestServiceDockerClientStrategy.clearTestcontainersConfig();
+    }
+
 }

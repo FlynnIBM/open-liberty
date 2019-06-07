@@ -16,12 +16,15 @@ import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 
 import com.ibm.websphere.simplicity.ShrinkHelper;
 
+import componenttest.custom.junit.runner.FATRunner;
 import componenttest.topology.impl.LibertyServer;
 import componenttest.topology.impl.LibertyServerFactory;
 
+@RunWith(FATRunner.class)
 public class DelayedVariableTests extends ServletRunner {
 
     private static final String CONTEXT_ROOT = "varmergedconfig";
@@ -54,6 +57,7 @@ public class DelayedVariableTests extends ServletRunner {
         server.setServerConfigurationFile("delayedVar/cycle.xml");
         //CWWKG0011W: The configuration validation did not succeed. Variable evaluation loop detected: [${cycle2}, ${cycle3}, ${cycle1}andSomeText]
         server.waitForStringInLog("CWWKG0011W.*[${cycle2}, ${cycle3}, ${cycle1}andSomeText]");
+        server.waitForConfigUpdateInLogUsingMark(null);
         server.setServerConfigurationFile("delayedVar/original.xml");
         server.waitForConfigUpdateInLogUsingMark(null);
     }

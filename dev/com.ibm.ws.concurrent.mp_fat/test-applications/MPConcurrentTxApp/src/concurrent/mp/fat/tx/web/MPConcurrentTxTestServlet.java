@@ -19,6 +19,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.SQLNonTransientConnectionException;
+import java.sql.SQLRecoverableException;
 import java.sql.Statement;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -151,8 +153,15 @@ public class MPConcurrentTxTestServlet extends FATServlet {
             assertEquals(1, st.executeUpdate("INSERT INTO MNCOUNTIES VALUES ('Dakota', 414655)"));
             con.close();
 
-            // ensure the above runs in the same transaction while the transaction is still active on the current thread
-            assertEquals(Integer.valueOf(1), stage.join());
+            try {
+                // attempt to run under the same transaction while the transaction is still active on the current thread
+                fail("Transaction manager should not allow resume of transaction onto multiple threads at once. Result: " + stage.join());
+            } catch (CompletionException x) {
+                if (x.getCause() instanceof IllegalStateException)
+                    ; // pass - transaction manager rejected resuming transaction onto 2 threads at once
+                else
+                    throw x;
+            }
 
             tx.commit();
         } finally {
@@ -188,8 +197,15 @@ public class MPConcurrentTxTestServlet extends FATServlet {
             assertEquals(1, st.executeUpdate("INSERT INTO MNCOUNTIES VALUES ('Anoka', 344861)"));
             con.close();
 
-            // ensure the above runs in the same transaction while the transaction is still active on the current thread
-            assertEquals(Integer.valueOf(1), stage.join());
+            try {
+                // attempt to run under the same transaction while the transaction is still active on the current thread
+                fail("Transaction manager should not allow resume of transaction onto multiple threads at once. Result: " + stage.join());
+            } catch (CompletionException x) {
+                if (x.getCause() instanceof IllegalStateException)
+                    ; // pass - transaction manager rejected resuming transaction onto 2 threads at once
+                else
+                    throw x;
+            }
         } finally {
             tx.rollback();
         }
@@ -202,7 +218,9 @@ public class MPConcurrentTxTestServlet extends FATServlet {
 
             result = st.executeQuery("SELECT SUM(POPULATION) FROM IACOUNTIES WHERE NAME='Dubuque' OR NAME='Story'");
             assertTrue(result.next());
-            assertEquals(96571, result.getInt(1));
+            // With the transaction manager rejecting resume onto the parallel thread, the insert of Dubuque is now blocked as well
+            assertEquals(0, result.getInt(1));
+            // previously: assertEquals(96571, result.getInt(1));
         }
     }
 
@@ -1472,6 +1490,74 @@ public class MPConcurrentTxTestServlet extends FATServlet {
     }
 
     /**
+     * Simulate a user error scenario (assuming only serial access to a transaction is permitted)
+     * where completion stages are allowed to start in parallel to the original transaction and
+     * are consequently rejected, including the stage that would resolve the transaction.
+     * Verify that transaction timeout eventually rolls back the transactions and prevents locks
+     * from being held open.
+     */
+    public void testTransactionTimesOutAndReleasesLocks() throws Exception {
+        boolean supportsParallelUse = false;
+        CompletableFuture<Integer> stage1 = txExecutor.completedFuture(0);
+        CompletableFuture<Integer> stage2;
+        tx.setTransactionTimeout(10);
+        tx.begin();
+        try {
+            try (Connection con = defaultDataSource.getConnection(); Statement st = con.createStatement()) {
+                st.executeUpdate("INSERT INTO MNCOUNTIES VALUES ('Swift', 9783)");
+            } catch (SQLNonTransientConnectionException | SQLRecoverableException x) {
+                // ignore - this means the transaction timed out too soon
+            }
+
+            stage2 = stage1.thenApplyAsync(numUpdates -> {
+                try (Connection con = defaultDataSource.getConnection(); Statement st = con.createStatement()) {
+                    return numUpdates + st.executeUpdate("INSERT INTO IACOUNTIES VALUES ('Shelby', 12167)");
+                } catch (SQLException x) {
+                    throw new CompletionException(x);
+                }
+            }).whenComplete((result, failure) -> {
+                try {
+                    if (failure == null && tx.getStatus() == Status.STATUS_ACTIVE)
+                        tx.commit();
+                    else
+                        tx.rollback();
+                } catch (Exception x) {
+                    x.printStackTrace();
+                    if (failure == null)
+                        throw new CompletionException(x);
+                }
+            });
+
+            // Force propagation of the transaction to another thread in parallel
+            try {
+                assertEquals(Integer.valueOf(1), stage2.join());
+                supportsParallelUse = true;
+            } catch (CompletionException x) {
+                if (x.getCause() instanceof IllegalStateException) // transaction used on 2 threads at once
+                    ; // expected
+                else
+                    throw x;
+            }
+        } finally {
+            tm.suspend();
+        }
+
+        try (Connection con = defaultDataSource.getConnection()) {
+            // In the case where parallel use is rejected, the following attempt to read the entry
+            // that was written in the prior transaction will be blocked until the transaction
+            // rolls back and releases its locks on the data.
+            con.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            Statement st = con.createStatement();
+            ResultSet result = st.executeQuery("SELECT SUM(POPULATION) FROM MNCOUNTIES WHERE NAME='Swift'");
+            assertTrue(result.next());
+            if (supportsParallelUse)
+                assertEquals(9783, result.getInt(1));
+            else // update must be rolled back
+                assertEquals(0, result.getInt(1));
+        }
+    }
+
+    /**
      * Use multiple two-phase capable resources in the same transaction at the same time on different threads.
      * Commit the transaction after all transactional operations are finished.
      */
@@ -1508,11 +1594,10 @@ public class MPConcurrentTxTestServlet extends FATServlet {
                 else
                     throw x;
             }
-
+        } finally {
             if (tx.getStatus() == Status.STATUS_ACTIVE)
                 tx.commit();
-        } finally {
-            if (tx.getStatus() != Status.STATUS_NO_TRANSACTION)
+            else
                 tx.rollback();
         }
 
@@ -1746,7 +1831,10 @@ public class MPConcurrentTxTestServlet extends FATServlet {
                     throw x;
             }
         } finally {
-            tx.commit();
+            if (tx.getStatus() == Status.STATUS_ACTIVE)
+                tx.commit();
+            else
+                tx.rollback();
         }
 
         try (Connection con = defaultDataSource.getConnection(); Statement st = con.createStatement()) {

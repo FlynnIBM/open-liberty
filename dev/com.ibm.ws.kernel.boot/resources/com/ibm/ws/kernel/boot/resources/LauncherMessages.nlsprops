@@ -1,5 +1,5 @@
 ###############################################################################
-# Copyright (c) 2010, 2016 IBM Corporation and others.
+# Copyright (c) 2010, 2019 IBM Corporation and others.
 # All rights reserved. This program and the accompanying materials
 # are made available under the terms of the Eclipse Public License v1.0
 # which accompanies this distribution, and is available at
@@ -700,6 +700,10 @@ error.package.extension=CWWKE0950E: The archive filename must end with .jar when
 error.package.extension.explanation=The --archive option must include a file extension that ends with .jar when specifying --include=runnable.
 error.package.extension.useraction=Supply a file name to --archive with a file extension of .jar when specifying --include=runnable.
 
+error.package.usr.jar=CWWKE0951E: The archive file name must not end with a .jar file extension when the usr option is used.
+error.package.usr.jar.explanation=The --archive option must not end with a .jar file extension when --include=usr is specified.
+error.package.usr.jar.useraction=Supply a file name to --archive with a file extension other than a .jar file extension when --include=usr is specified.
+
 info.serverStarting=Starting server {0}.
 info.serverStarted=Server {0} started.
 info.serverStartedWithPID=Server {0} started with process ID {1}.
@@ -752,6 +756,8 @@ info.resumeFailedException=Resuming the {0} server failed. Check the server logs
 info.resumingListeners.target=Resuming the specified target components of the {0} server.
 info.resumedListeners.target=Resuming the specified target components of the {0} server completed.
 info.resumeFailedException.target=Resuming the specified target components of the {0} server failed. Check the server logs for details.
+info.serverCommandAuthFailure=The command {0} failed because the process could not delete the file {1}.
+info.serverCommandCommFailure=The command {0} failed because of a communication error with the server.
 
 # For info.serverLaunch and info.serverVersion: 
 # {0} version (build and/or product name)
@@ -780,3 +786,4 @@ info.no.servers.defined=There are no servers defined in the user directory {0}.
 info.list.of.defined.servers=The following servers are defined relative to the user directory {0}.
 info.communicate.server=A communication error has occurred between the command {0} and the server {1}.
 
+info.serialFilterLoaded=The serial filter agent loaded.

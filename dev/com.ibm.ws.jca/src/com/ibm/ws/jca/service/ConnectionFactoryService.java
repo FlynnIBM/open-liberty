@@ -375,6 +375,10 @@ public class ConnectionFactoryService extends AbstractConnectionFactoryService i
                                                    + ", " + Connector.class.getName() + ':' + ddTransactionSupport);
         }
 
+        // Otherwise choose NoTransaction
+        if (transactionSupport == null)
+            transactionSupport = TransactionSupportLevel.NoTransaction;
+
         if (connectionFactoryTransactionSupport != null) {
             if (connectionFactoryTransactionSupport.ordinal() > transactionSupport.ordinal())
                 throw new IllegalArgumentException(ManagedConnectionFactory.class.getName() + ':' + transactionSupport
@@ -383,8 +387,7 @@ public class ConnectionFactoryService extends AbstractConnectionFactoryService i
                 transactionSupport = connectionFactoryTransactionSupport;
         }
 
-        // Otherwise choose NoTransaction
-        return transactionSupport == null ? TransactionSupportLevel.NoTransaction : transactionSupport;
+        return transactionSupport;
     }
 
     @Override
@@ -442,7 +445,17 @@ public class ConnectionFactoryService extends AbstractConnectionFactoryService i
      *
      * @param ref reference to the service
      */
-    protected void setSslConfig(ServiceReference<?> ref) {}
+    protected void setSslConfig(ServiceReference<?> ref) {
+    }
+
+    /**
+     * Indicates to the connection manager whether validation is occurring on the current thread.
+     *
+     * @param isValidating true if validation is occurring on the current thread. Otherwise false.
+     */
+    public void setValidating(boolean isValidating) {
+        conMgrSvc.setValidating(isValidating);
+    }
 
     /**
      * Declarative Services method for unsetting the BootstrapContext reference
@@ -467,7 +480,8 @@ public class ConnectionFactoryService extends AbstractConnectionFactoryService i
      *
      * @param ref reference to the service
      */
-    protected void unsetSslConfig(ServiceReference<?> ref) {}
+    protected void unsetSslConfig(ServiceReference<?> ref) {
+    }
 
     /** {@inheritDoc} */
     @Override
