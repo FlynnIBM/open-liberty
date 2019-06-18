@@ -15,7 +15,9 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -49,6 +51,7 @@ import com.ibm.wsspi.http.WorkClassifier;
 import com.ibm.wsspi.http.channel.values.HttpHeaderKeys;
 import com.ibm.wsspi.http.ee7.HttpTransportBehavior;
 import com.ibm.wsspi.kernel.service.utils.MetatypeUtils;
+import com.ibm.wsspi.threading.ExecutorServiceTaskInterceptor;
 import com.ibm.wsspi.timer.ApproximateTime;
 import com.ibm.wsspi.timer.QuickApproxTime;
 
@@ -78,6 +81,32 @@ public class HttpDispatcher {
 
     private static volatile boolean useEE7Streams = false;
     private static volatile Boolean useIOExceptionBehavior = null;
+
+    /**
+     * Indicates whether any interceptors are currently being used. This is for performance
+     * reasons, to avoid using the default executor when no interceptors are registered
+     */
+    static boolean interceptorsActive = false;
+
+    /**
+     * A Set of interceptors that are all given a chance to wrap tasks that are submitted
+     * to the executor for execution.
+     */
+    Set<ExecutorServiceTaskInterceptor> interceptors = new CopyOnWriteArraySet<ExecutorServiceTaskInterceptor>();
+
+    @Reference(cardinality = ReferenceCardinality.MULTIPLE,
+               policy = ReferencePolicy.DYNAMIC, policyOption = ReferencePolicyOption.GREEDY)
+    protected synchronized void setInterceptor(ExecutorServiceTaskInterceptor interceptor) {
+        interceptors.add(interceptor);
+        interceptorsActive = true;
+    }
+
+    protected synchronized void unsetInterceptor(ExecutorServiceTaskInterceptor interceptor) {
+        interceptors.remove(interceptor);
+        if (interceptors.size() == 0) {
+            interceptorsActive = false;
+        }
+    }
 
     static final String CONFIG_ALIAS = "httpDispatcher";
 
@@ -157,7 +186,8 @@ public class HttpDispatcher {
     /**
      * Constructor.
      */
-    public HttpDispatcher() {}
+    public HttpDispatcher() {
+    }
 
     /**
      * DS method to activate this component.
@@ -285,15 +315,15 @@ public class HttpDispatcher {
 
     /**
      * Parses the three private header config properties we have: trusted, trustedHeaderOrigin, and trustedSensitiveHeaderOrigin.
-     * 
+     *
      * This class uses these internal flags to keep track of private header behavior:
      * wcTrusted - true if any private headers are allowed; false if no private headers are allowed
      * usePrivateHeaders - true if non-sensitive headers are allowed for some hosts
      * useSensitivePrivateHeaders - true if sensitive headers are allowed for some hosts
      * restrictPrivateHeaderOrigin - a list of hosts trusted for private headers; if null, any host is trusted
      * restrictSensitiveHeaderOrigin - a list of hosts trusted for sensitive headers; if null, no host is trusted
-     * 
-     * @param trustedPrivateHeaderHosts String[] of hosts to trust for non-sensitive private headers
+     *
+     * @param trustedPrivateHeaderHosts   String[] of hosts to trust for non-sensitive private headers
      * @param trustedSensitiveHeaderHosts String[] of hosts to trust for sensitive private headers
      */
     private synchronized void parseTrustedPrivateHeaderOrigin(String[] trustedPrivateHeaderHosts, String[] trustedSensitiveHeaderHosts) {
@@ -431,9 +461,9 @@ public class HttpDispatcher {
 
     /**
      * Check to see if the source host address is one we allow for specification of private headers
-     * 
-     * This takes into account the hosts defined in trustedHeaderOrigin and trustedSensitiveHeaderOrigin.  Note, 
-     * trustedSensitiveHeaderOrigin takes precedence over trustedHeaderOrigin; so if trustedHeaderOrigin="none" 
+     *
+     * This takes into account the hosts defined in trustedHeaderOrigin and trustedSensitiveHeaderOrigin. Note,
+     * trustedSensitiveHeaderOrigin takes precedence over trustedHeaderOrigin; so if trustedHeaderOrigin="none"
      * while trustedSensitiveHeaderOrigin="*", non-sensitive headers will still be trusted for all hosts.
      *
      * @param hostAddr The source host address
@@ -444,7 +474,7 @@ public class HttpDispatcher {
             return false;
         }
         if (hostAddr == null) {
-            // no host address information passed in; return the default value 
+            // no host address information passed in; return the default value
             return this.usePrivateHeaders;
         }
         if (HttpHeaderKeys.isSensitivePrivateHeader(headerName)) {
@@ -723,7 +753,7 @@ public class HttpDispatcher {
         boolean newTrusted = MetatypeUtils.parseBoolean("webContainer", PROP_WC_TRUSTED,
                                                         ref.getProperty(PROP_WC_TRUSTED), true);
 
-        if (newTrusted != wcTrusted) {    
+        if (newTrusted != wcTrusted) {
             wcTrusted = newTrusted;
 
             // Check the value of trusted headers..
@@ -733,7 +763,8 @@ public class HttpDispatcher {
         }
     }
 
-    protected void unsetWebContainer(ServiceReference<VirtualHostListener> ref) {}
+    protected void unsetWebContainer(ServiceReference<VirtualHostListener> ref) {
+    }
 
     /**
      * DS method for setting the Work Classification service reference.
@@ -767,6 +798,15 @@ public class HttpDispatcher {
             return f.workClassifier;
 
         return null;
+    }
+
+    /**
+     * Checks for interceptors
+     *
+     * @return WorkClassifier - null if not found
+     */
+    public static boolean getInterceptorValue() {
+        return interceptorsActive;
     }
 
     /**
