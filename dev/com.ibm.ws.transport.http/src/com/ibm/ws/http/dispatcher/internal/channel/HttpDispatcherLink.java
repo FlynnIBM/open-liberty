@@ -402,10 +402,10 @@ public class HttpDispatcherLink extends InboundApplicationLink implements HttpIn
         RunnableWithContext handlerWC = null;
         if (HttpDispatcher.getInterceptorValue()) {
             final HttpWorkContext wc = new HttpWorkContext();
-            wc.put(WorkContext.INBOUND_PORT, Integer.toString(this.getLocalPort()));
+            wc.put(WorkContext.INBOUND_PORT, Integer.toString(this.request.getVirtualPort()));
             wc.put(WorkContext.URI, this.request.getURI());
             wc.put(WorkContext.METHOD_NAME, this.request.getMethod());
-            wc.put(WorkContext.INBOUND_HOSTNAME, this.localCanonicalHostName);
+            wc.put(WorkContext.INBOUND_HOSTNAME, this.request.getVirtualHost());
 
             handlerWC = new RunnableWithContext() {
 
