@@ -16,8 +16,7 @@ import java.util.Map;
  *
  */
 public interface WorkContext extends Map<String, String> {
-    static final String WORK_TYPE_IIOP_NAMING = "IIOPNaming";
-    static final String WORK_TYPE_IIOP_EJB = "IIOPEJB";
+    static final String WORK_TYPE_IIOP = "IIOP";
     static final String WORK_TYPE_EJB_TIMER = "EJBTimer";
     static final String WORK_TYPE_EJB_ASYNC = "EJBAsync";
     static final String WORK_TYPE_HTTP = "HTTP";

@@ -14,15 +14,12 @@ import java.util.HashMap;
 
 import com.ibm.wsspi.threading.WorkContext;
 
-/**
- *
- */
 public class IIOPWorkContext extends HashMap<String, String> implements WorkContext {
 
     @Override
     public String getWorkType() {
         // TODO Auto-generated method stub
-        return WorkContext.WORK_TYPE_HTTP;
+        return WorkContext.WORK_TYPE_IIOP;
     }
 
 }
